@@ -129,7 +129,7 @@ object DesktopPlatformCapabilities : SharedPlatformCapabilities {
     /** 导出方式 (对照原版 ExportBookService.ExportConfig: type 或 epubScope+epubSize)。 */
     private sealed interface ExportMode {
         /** 按导出配置导: `txt` / `epub`, 图片书为 `cbz`。 */
-        data class ByConfig(val type: String) : ExportMode
+        data class ByConfig(val type: String, val downloadMissing: Boolean = false) : ExportMode
 
         /** 自定义导出: 章节范围 + 分卷大小 (epub)。 */
         data class CustomEpub(val range: String, val size: Int) : ExportMode
@@ -732,6 +732,20 @@ object DesktopPlatformCapabilities : SharedPlatformCapabilities {
         }
     }
 
+    override fun downloadBookAsTxt(book: Book) {
+        scope.launch {
+            if (effectiveBookSaveDir() == null && !ensureBookSaveDirSelected()) return@launch
+            var dir = effectiveBookSaveDir() ?: return@launch
+            if (!File(dir).isDirectory && !File(dir).mkdirs()) {
+                if (!reselectBookSaveDir()) return@launch
+                dir = effectiveBookSaveDir() ?: return@launch
+            }
+            enqueueExport(listOf(book), dir, label = " (整本 TXT)") {
+                ExportMode.ByConfig("txt", downloadMissing = true)
+            }
+        }
+    }
+
     // 导出配置弹窗 (对照 app 端 showExportConfig / dialog_export_config.xml 全量字段):
     // 导出文件名 JS 规则 / 导出类型 txt|epub / 导出编码 / TXT 不导出章节名
     // (cbz 按 app 端语义由图片书自动选择, 无需用户配置); 弹共享实现 (与鸿蒙同一形制)
@@ -869,7 +883,11 @@ object DesktopPlatformCapabilities : SharedPlatformCapabilities {
                         is ExportMode.ByConfig -> when (mode.type) {
                             "cbz" -> DesktopBookExport.exportCbz(pending.path, listOf(pending.book))
                             "epub" -> DesktopBookExport.exportEpub(pending.path, listOf(pending.book))
-                            else -> DesktopBookExport.exportTxt(pending.path, listOf(pending.book))
+                            else -> DesktopBookExport.exportTxt(
+                                pending.path,
+                                listOf(pending.book),
+                                downloadMissing = mode.downloadMissing,
+                            )
                         }
 
                         is ExportMode.CustomEpub -> DesktopBookExport.exportCustomEpub(

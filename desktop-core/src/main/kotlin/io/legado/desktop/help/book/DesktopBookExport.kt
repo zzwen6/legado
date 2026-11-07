@@ -33,9 +33,13 @@ object DesktopBookExport {
     private val epubShared by lazy { ExportBookEpubShared(DesktopExportBookDeps, shared) }
 
     /** 导出到 [dir] 目录, 每本书一个 txt (对照 app 端 ExportBookService 的 txt 分支)。 */
-    suspend fun exportTxt(dir: String, books: List<Book>) {
+    suspend fun exportTxt(
+        dir: String,
+        books: List<Book>,
+        downloadMissing: Boolean = false,
+    ) {
         File(dir).mkdirs()
-        books.forEach { shared.exportTxt(dir, it) }
+        books.forEach { shared.exportTxt(dir, it, downloadMissing) }
     }
 
     /** 导出到 [dir] 目录, 每本书一个 epub (对照 app 端 ExportBookService 的 epub 分支)。 */

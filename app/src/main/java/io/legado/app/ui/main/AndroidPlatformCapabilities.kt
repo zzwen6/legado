@@ -1249,6 +1249,24 @@ class AndroidPlatformCapabilities(
         }
     }
 
+    /**
+     * 下载整本 TXT。目录选择与普通导出共用“书籍保存位置”，但格式固定为 TXT，且服务会
+     * 对未缓存章节按书源规则联网补齐。
+     */
+    override fun downloadBookAsTxt(book: Book) {
+        Coroutine.async {
+            if (effectiveBookSaveDir() == null && !ensureBookSaveDirSelected()) return@async
+            var path = effectiveBookSaveDir() ?: return@async
+            if (!isBookSaveDirWritable(path)) {
+                if (!reselectBookSaveDir()) return@async
+                path = effectiveBookSaveDir() ?: return@async
+            }
+            activity.startDownloadBookAsTxt(path, book)
+        }.onError {
+            activity.toastOnUi("下载整本 TXT 出错\n${it.localizedMessage}")
+        }
+    }
+
     /** 书籍保存位置可写性预检 (SAF 树引用用 DocumentFile 判定, 普通路径直通)。 */
     private fun isBookSaveDirWritable(path: String): Boolean =
         runCatching { FileDoc.fromUri(path.toUri(), true).checkWrite() }.getOrDefault(false)

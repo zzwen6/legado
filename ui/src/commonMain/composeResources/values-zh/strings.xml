@@ -275,6 +275,7 @@
     <string name="action_download">下载</string>
     <string name="allow_update">允许更新</string>
     <string name="download_to_local">下载到本地</string>
+    <string name="download_full_book_txt">下载整本（TXT）</string>
     <string name="empty_msg_import_book">点击右上角文件夹图标，选择文件夹</string>
     <string name="export_all_use_book_source">导出所有书的书源</string>
     <string name="export_config">导出文件设置</string>

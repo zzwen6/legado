@@ -554,6 +554,9 @@ interface PlatformCapabilities {
     /** 导出全部选中书籍为文件 (对照 exportAll) */
     fun exportAllBooks(books: List<Book>) = unsupported("导出书籍")
 
+    /** 下载网络书全部章节并强制导出为 TXT。 */
+    fun downloadBookAsTxt(book: Book) = unsupported("下载整本 TXT")
+
     /** 导出书架 JSON (对照 exportBookshelf) */
     fun exportBookshelf(books: List<Book>) = unsupported("导出书架")
 

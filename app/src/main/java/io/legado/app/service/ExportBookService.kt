@@ -57,6 +57,7 @@ class ExportBookService : BaseService() {
     data class ExportConfig(
         val path: String,
         val type: String,
+        val downloadMissing: Boolean = false,
         val epubSize: Int = 1,
         val epubScope: String? = null
     )
@@ -80,6 +81,7 @@ class ExportBookService : BaseService() {
                     val exportConfig = ExportConfig(
                         path = intent.getStringExtra("exportPath")!!,
                         type = intent.getStringExtra("exportType")!!,
+                        downloadMissing = intent.getBooleanExtra("downloadMissing", false),
                         epubSize = intent.getIntExtra("epubSize", 1),
                         epubScope = intent.getStringExtra("epubScope")
                     )
@@ -190,7 +192,11 @@ class ExportBookService : BaseService() {
                         }
 
                         "cbz" -> epubShared.exportCbz(exportConfig.path, book, chapters)
-                        else -> shared.exportTxt(exportConfig.path, book)
+                        else -> shared.exportTxt(
+                            exportConfig.path,
+                            book,
+                            exportConfig.downloadMissing,
+                        )
                     }
                     exportMsg[book.bookUrl] = androidAppString("export_success")
                 } catch (e: Throwable) {

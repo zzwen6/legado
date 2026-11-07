@@ -275,6 +275,7 @@
     <string name="action_download">Download</string>
     <string name="allow_update">Enable update</string>
     <string name="download_to_local">Download to local</string>
+    <string name="download_full_book_txt">Download full book as TXT</string>
     <string name="empty_msg_import_book">Click the folder icon in the upper right corner and select the folder</string>
     <string name="export_all_use_book_source">Export book source for all books</string>
     <string name="export_config">Export file config</string>
