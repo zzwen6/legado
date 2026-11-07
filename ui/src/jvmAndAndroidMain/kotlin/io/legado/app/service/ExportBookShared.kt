@@ -66,8 +66,9 @@ class ExportBookShared(private val deps: ExportBookDeps) {
      */
     suspend fun getAllContents(
         book: Book,
+        downloadMissing: Boolean = false,
         append: (text: String) -> Unit
-    ) = contentShared.getAllContents(book, append)
+    ) = contentShared.getAllContents(book, downloadMissing, append)
 
     /**
      * 导出 TXT。
@@ -82,7 +83,7 @@ class ExportBookShared(private val deps: ExportBookDeps) {
      * @param path 导出目录 (FileDoc.fromDir 可识别的路径)
      * @param book 书籍
      */
-    suspend fun exportTxt(path: String, book: Book) {
+    suspend fun exportTxt(path: String, book: Book, downloadMissing: Boolean = false) {
         deps.removeExportMsg(book.bookUrl)
         deps.postExportEvent(book.bookUrl)
         val filename = deps.getExportFileName(book, "txt")
@@ -90,7 +91,7 @@ class ExportBookShared(private val deps: ExportBookDeps) {
         try {
             val charset = Charset.forName(deps.exportCharset)
             handle.outputStream.bufferedWriter(charset).use { bw ->
-                getAllContents(book) { text ->
+                getAllContents(book, downloadMissing) { text ->
                     bw.write(text)
                 }
             }

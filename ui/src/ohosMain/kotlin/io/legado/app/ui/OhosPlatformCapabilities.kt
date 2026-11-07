@@ -155,7 +155,7 @@ object OhosPlatformCapabilities : NativePlatformCapabilities {
     /** 导出方式 (对照原版 ExportBookService.ExportConfig: type 或 epubScope+epubSize)。 */
     private sealed interface ExportMode {
         /** 按导出配置导: `txt` / `epub`, 图片书为 `cbz`。 */
-        data class ByConfig(val type: Int) : ExportMode
+        data class ByConfig(val type: Int, val downloadMissing: Boolean = false) : ExportMode
 
         /** 自定义导出: 章节下标集合 + 分卷大小 (epub)。 */
         data class CustomEpub(val scope: Set<Int>, val size: Int) : ExportMode
@@ -514,6 +514,15 @@ object OhosPlatformCapabilities : NativePlatformCapabilities {
         }
     }
 
+    override fun downloadBookAsTxt(book: Book) {
+        scope.launch {
+            if (!ensureBookSaveDirSelected()) return@launch
+            enqueueExport(listOf(book), label = " (整本 TXT)") {
+                ExportMode.ByConfig(0, downloadMissing = true)
+            }
+        }
+    }
+
     /**
      * 导出请求入队 (对照原版 BookshelfManageActivity.startExportBooks → ExportBookService:
      * 每本书一条队列项, 重复触发入队稍后照常导出), 队列空闲时顺手拉起执行者。
@@ -580,7 +589,13 @@ object OhosPlatformCapabilities : NativePlatformCapabilities {
         usedPaths: MutableSet<String>,
     ): List<File> = when (val mode = pending.mode) {
         is ExportMode.ByConfig -> listOf(
-            NativeBookExporter.exportBookFile(pending.book, exportDir, usedPaths, mode.type)
+            NativeBookExporter.exportBookFile(
+                pending.book,
+                exportDir,
+                usedPaths,
+                mode.type,
+                downloadMissing = mode.downloadMissing,
+            )
         )
 
         is ExportMode.CustomEpub -> if (pending.book.isImage) {

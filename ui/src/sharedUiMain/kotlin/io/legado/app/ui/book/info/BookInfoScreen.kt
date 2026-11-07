@@ -94,6 +94,7 @@ import legado.ui.generated.resources.clear_cache
 import legado.ui.generated.resources.copy_book_url
 import legado.ui.generated.resources.copy_toc_url
 import legado.ui.generated.resources.download_to_local
+import legado.ui.generated.resources.download_full_book_txt
 import legado.ui.generated.resources.edit
 import legado.ui.generated.resources.ic_arrow_back
 import legado.ui.generated.resources.ic_book_last
@@ -198,6 +199,7 @@ data class BookInfoMenuState(
     val canUpdate: Boolean,            // book?.canUpdate ?: true
     val isLocalTxt: Boolean,           // book?.isLocalTxt == true
     val splitLongChapter: Boolean,     // book?.config.splitLongChapter
+    val canDownloadTxt: Boolean,       // 网络文字书可下载整本 TXT
     val bookUrl: String?,              // book?.bookUrl (用于复制)
     val tocUrl: String?,               // book?.tocUrl  (用于复制)
 )
@@ -219,6 +221,7 @@ interface BookInfoUiActions {
     fun onRefresh()
     fun onUploadBook()
     fun onDownloadToLocal()
+    fun onDownloadTxt()
     fun onTopBook()
     fun onLogin()
     fun onOpenCommentDialog()
@@ -560,6 +563,11 @@ private fun InfoOverflowMenu(
             if (menu.isWebDav) {
                 MenuItem(stringResource(Res.string.download_to_local)) {
                     dismiss(); actions.onDownloadToLocal()
+                }
+            }
+            if (menu.canDownloadTxt) {
+                MenuItem(stringResource(Res.string.download_full_book_txt)) {
+                    dismiss(); actions.onDownloadTxt()
                 }
             }
             MenuItem(stringResource(Res.string.to_top)) { dismiss(); actions.onTopBook() }

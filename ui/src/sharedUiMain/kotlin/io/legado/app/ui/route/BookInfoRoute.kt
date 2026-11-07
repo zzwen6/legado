@@ -370,6 +370,22 @@ fun BookInfoRoute(
             )
         }
 
+        // 下载整本 TXT: 未上架的搜索结果先连同已加载目录加入书架，确保后台任务在进程
+        // 重建后仍可从数据库恢复书籍与目录；随后由平台能力强制以 TXT 模式补齐缺章并导出。
+        override fun onDownloadTxt() {
+            val b = state.book ?: book
+            scope.launch(IoDispatcher) {
+                if (!screenModel.state.value.inBookshelf) {
+                    b.toggleBookshelfCore(
+                        inBookshelf = false,
+                        chapters = screenModel.loadedChapterList,
+                    )
+                    screenModel.dispatch(BookInfoUiEvent.UpdateBookshelf(true))
+                }
+                PlatformCapabilityProviders.get().downloadBookAsTxt(b)
+            }
+        }
+
         // 置顶: 更新 order + durChapterTime
         override fun onTopBook() {
             val b = state.book ?: book
@@ -777,6 +793,12 @@ fun BookInfoRoute(
         canUpdate = currentBook.canUpdate,
         isLocalTxt = currentBook.isLocalTxt,
         splitLongChapter = currentBook.config.splitLongChapter,
+        canDownloadTxt = !currentBook.isLocal &&
+            !currentBook.isAudio &&
+            !currentBook.isVideo &&
+            !currentBook.isImage &&
+            !currentBook.isRss &&
+            !currentBook.isWebFile,
         bookUrl = currentBook.bookUrl,
         tocUrl = currentBook.tocUrl,
     )

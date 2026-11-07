@@ -257,6 +257,17 @@ class MainActivity : BaseComposeActivity(imageBg = false) {
         }
     }
 
+    /** 下载网络书缺失章节并强制导出为单个 TXT，不受全局导出格式设置影响。 */
+    internal fun startDownloadBookAsTxt(path: String, book: Book) {
+        startService<ExportBookService> {
+            action = IntentAction.start
+            putExtra("bookUrl", book.bookUrl)
+            putExtra("exportType", "txt")
+            putExtra("exportPath", path)
+            putExtra("downloadMissing", true)
+        }
+    }
+
     /** 自定义导出: 按章节范围/分卷大小导出为 epub (对照 configExportSection 的自定义分支)。 */
     internal fun startExportBooksCustom(
         path: String,

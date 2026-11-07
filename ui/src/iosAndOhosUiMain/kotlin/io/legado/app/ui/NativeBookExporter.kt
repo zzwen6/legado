@@ -5,13 +5,14 @@ import io.legado.app.constant.PreferKey
 import io.legado.app.data.AppDbProviders
 import io.legado.app.data.entities.Book
 import io.legado.app.data.entities.BookChapter
-import io.legado.app.help.book.BookHelpProviders
 import io.legado.app.help.book.ContentProcessorProviders
 import io.legado.app.help.book.getExportFileName
 import io.legado.app.help.book.isEpub
 import io.legado.app.help.book.isImage
 import io.legado.app.help.book.isLocal
 import io.legado.app.help.config.PreferenceProviders
+import io.legado.app.service.getExportRawContent
+import io.legado.app.service.ensureExportChapterList
 import io.legado.app.utils.File
 import io.legado.app.utils.HtmlFormatter
 import io.legado.app.utils.textCharsetCodec
@@ -34,13 +35,20 @@ internal object NativeBookExporter {
         exportType: Int,
         chaptersOverride: List<BookChapter>? = null,
         nameOverride: String? = null,
+        downloadMissing: Boolean = false,
     ): File {
         if (chaptersOverride == null && book.isLocal && (book.isImage || (exportType == 1 && book.isEpub))) {
             val original = File(book.bookUrl.removePrefix("file://"))
             if (original.isFile) return original
         }
-        val chapters = chaptersOverride ?: appDb.bookChapterDao.getChapterList(book.bookUrl)
+        val chapters = chaptersOverride ?: ensureExportChapterList(book, downloadMissing)
         if (chapters.isEmpty()) error("没有章节")
+        val bookSource = if (downloadMissing && !book.isLocal) {
+            appDb.bookSourceDao.getBookSource(book.origin)
+                ?: error("书源已删除或失效，无法下载《${book.name}》")
+        } else {
+            null
+        }
         val extension = when {
             book.isImage -> "cbz"
             exportType == 1 -> "epub"
@@ -78,9 +86,15 @@ internal object NativeBookExporter {
                 writeText("${book.name}\n作者：${book.getRealAuthor()}\n简介：${HtmlFormatter.format(book.getDisplayIntro())}")
                 val useReplace = prefs.getBoolean(PreferKey.exportUseReplace, true) && book.getUseReplaceRule()
                 val includeTitle = !prefs.getBoolean(PreferKey.exportNoChapterName, false)
-                chapters.forEach { chapter ->
+                chapters.forEachIndexed { index, chapter ->
                     currentCoroutineContext().ensureActive()
-                    val rawContent = BookHelpProviders.get().getContent(book, chapter)
+                    val rawContent = getExportRawContent(
+                        book = book,
+                        chapter = chapter,
+                        nextChapterUrl = chapters.getOrNull(index + 1)?.url,
+                        downloadMissing = downloadMissing,
+                        bookSource = bookSource,
+                    )
                     // 缺章写空正文并留痕 (对齐 ExportBookEpubShared.missingChapterContent):
                     // 写 "null" 字面量会让导出成品在阅读器里显示“正文=null”
                     if (rawContent == null && !chapter.isVolume) {

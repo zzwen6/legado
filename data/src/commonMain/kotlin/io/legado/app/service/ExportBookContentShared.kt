@@ -5,10 +5,16 @@ import io.legado.app.constant.AppLog
 import io.legado.app.data.AppDbProviders
 import io.legado.app.data.entities.Book
 import io.legado.app.data.entities.BookChapter
+import io.legado.app.data.entities.BookSource
 import io.legado.app.help.book.BookHelpProviders
+import io.legado.app.help.book.isLocal
+import io.legado.app.help.config.AppConfigProviders
+import io.legado.app.model.webBook.WebBook
 import io.legado.app.utils.HtmlFormatter
 import io.legado.app.utils.mapAsync
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectIndexed
 import kotlinx.coroutines.flow.flow
 
@@ -38,6 +44,7 @@ class ExportBookContentShared(private val deps: ExportBookContentDeps) {
      */
     suspend fun getAllContents(
         book: Book,
+        downloadMissing: Boolean = false,
         append: (text: String) -> Unit
     ) = coroutineScope {
         val useReplace = deps.exportUseReplace && book.getUseReplaceRule()
@@ -49,12 +56,33 @@ class ExportBookContentShared(private val deps: ExportBookContentDeps) {
             )
         }"
         append(qy)
+        val chapters = ensureExportChapterList(book, downloadMissing)
+        if (downloadMissing && chapters.isEmpty()) error("没有章节，无法下载整本 TXT")
+        val bookSource = if (downloadMissing && !book.isLocal) {
+            AppDbProviders.get().bookSourceDao.getBookSource(book.origin)
+                ?: error("书源已删除或失效，无法下载《${book.name}》")
+        } else {
+            null
+        }
         flow {
-            AppDbProviders.get().bookChapterDao.getChapterList(book.bookUrl).forEach { chapter ->
-                emit(chapter)
+            chapters.forEachIndexed { index, chapter ->
+                emit(index to chapter)
             }
-        }.mapAsync(AppConst.MAX_THREAD) { chapter ->
-            getExportData(book, chapter, useReplace)
+        }.mapAsync(
+            if (downloadMissing) {
+                AppConfigProviders.get().threadCount.coerceIn(1, AppConst.MAX_THREAD)
+            } else {
+                AppConst.MAX_THREAD
+            }
+        ) { (index, chapter) ->
+            getExportData(
+                book = book,
+                chapter = chapter,
+                nextChapterUrl = chapters.getOrNull(index + 1)?.url,
+                useReplace = useReplace,
+                downloadMissing = downloadMissing,
+                bookSource = bookSource,
+            )
         }.collectIndexed { index, result ->
             deps.postExportEvent(book.bookUrl)
             deps.setExportProgress(book.bookUrl, index)
@@ -73,12 +101,21 @@ class ExportBookContentShared(private val deps: ExportBookContentDeps) {
      *
      * @param useReplace 是否应用替换规则 (与 [Book.getUseReplaceRule] 取 AND 后传入)
      */
-    private fun getExportData(
+    private suspend fun getExportData(
         book: Book,
         chapter: BookChapter,
-        useReplace: Boolean
+        nextChapterUrl: String?,
+        useReplace: Boolean,
+        downloadMissing: Boolean,
+        bookSource: BookSource?,
     ): String {
-        val content = BookHelpProviders.get().getContent(book, chapter)
+        val content = getExportRawContent(
+            book = book,
+            chapter = chapter,
+            nextChapterUrl = nextChapterUrl,
+            downloadMissing = downloadMissing,
+            bookSource = bookSource,
+        )
         // 缺章写空正文并留痕 (对齐 ExportBookEpubShared.missingChapterContent):
         // 写 "null" 字面量会让导出成品在阅读器里显示“正文=null”
         if (content == null && !chapter.isVolume) {
@@ -96,6 +133,68 @@ class ExportBookContentShared(private val deps: ExportBookContentDeps) {
         ).toString()
         return "\n\n$content1"
     }
+}
+
+/** 下载整本前保证目录已经落库；普通导出不触发网络请求。 */
+suspend fun ensureExportChapterList(
+    book: Book,
+    downloadMissing: Boolean,
+): List<BookChapter> {
+    val appDb = AppDbProviders.get()
+    var chapters = appDb.bookChapterDao.getChapterList(book.bookUrl)
+    if (chapters.isNotEmpty() || !downloadMissing || book.isLocal) return chapters
+
+    val bookSource = appDb.bookSourceDao.getBookSource(book.origin)
+        ?: error("书源已删除或失效，无法下载《${book.name}》")
+    if (book.tocUrl.isEmpty()) {
+        WebBook.getBookInfoAwait(bookSource, book)
+    }
+    chapters = WebBook.getChapterListAwait(bookSource, book).getOrThrow()
+    if (chapters.isEmpty()) error("没有章节，无法下载整本 TXT")
+    appDb.bookChapterDao.insert(*chapters.toTypedArray())
+    appDb.bookDao.update(book)
+    return chapters
+}
+
+/**
+ * 读取导出所需的章节正文。
+ *
+ * 普通“导出”保持原行为，只读取本地缓存；“下载整本 TXT”会在缓存未命中时按书源规则
+ * 联网获取正文。WebBook 默认会把成功结果写入章节缓存，因此后续阅读和再次导出可直接复用。
+ * 单章最多尝试三次，最终仍失败则抛错，由上层删除未完成的 TXT，避免生成缺章文件。
+ */
+suspend fun getExportRawContent(
+    book: Book,
+    chapter: BookChapter,
+    nextChapterUrl: String?,
+    downloadMissing: Boolean,
+    bookSource: BookSource? = null,
+): String? {
+    BookHelpProviders.get().getContent(book, chapter)?.let { return it }
+    if (!downloadMissing || book.isLocal || chapter.isVolume) return null
+
+    val source = bookSource ?: AppDbProviders.get().bookSourceDao.getBookSource(book.origin)
+        ?: error("书源已删除或失效，无法下载《${book.name}》")
+    var lastError: Throwable? = null
+    repeat(3) { attempt ->
+        try {
+            return WebBook.getContentAwait(
+                bookSource = source,
+                book = book,
+                bookChapter = chapter,
+                nextChapterUrl = nextChapterUrl,
+            )
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Throwable) {
+            lastError = e
+            if (attempt < 2) delay((attempt + 1) * 1000L)
+        }
+    }
+    throw IllegalStateException(
+        "下载章节失败：${chapter.title}${lastError?.message?.let { "\n$it" }.orEmpty()}",
+        lastError,
+    )
 }
 
 /**

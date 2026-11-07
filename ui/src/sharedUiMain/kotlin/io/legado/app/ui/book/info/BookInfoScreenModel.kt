@@ -116,6 +116,7 @@ class BookInfoScreenModel(initialBook: Book? = null) : ScreenModel {
                 canUpdate = initialBook?.canUpdate ?: true,
                 isLocalTxt = initialBook?.isLocalTxt == true,
                 splitLongChapter = initialBook?.config?.splitLongChapter ?: false,
+                canDownloadTxt = false,
                 bookUrl = initialBook?.bookUrl,
                 tocUrl = initialBook?.tocUrl,
             ),
